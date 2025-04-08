@@ -1,7 +1,7 @@
 [project]
 name = "go-ast-tokenizer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Syntax-Aware Tokenizer for Go Code Style Analysis"
 readme = "README.md"
 authors = [
     { name = "Andrii Holovko", email = "andriy.holovko@gmail.com" }
@@ -18,3 +18,42 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.398",
+    "pytest>=8.3.5",
+    "ruff>=0.11.4",
+]
+
+[tool.pytest.ini_options]
+pythonpath = "src"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+]
+ignore = []
+per-file-ignores = {"__init__.py" = ["F401"]}  # Ignore unused imports in __init__.py files
+
+[tool.ruff.lint.isort]
+known-first-party = ["go_ast_tokenizer"]
+
+[tool.pyright]
+exclude = [".venv", ".git", "__pycache__", "build", "dist"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingImports = true
+reportMissingTypeStubs = false
