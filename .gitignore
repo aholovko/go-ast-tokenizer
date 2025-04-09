@@ -11,3 +11,8 @@ wheels/
 .idea/
 .ipynb_checkpoints/
 .ruff_cache/
+
+# Project-specific artifacts
+checkpoints/
+data/
+reports/

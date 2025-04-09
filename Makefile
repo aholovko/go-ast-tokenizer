@@ -1,3 +1,8 @@
+.PHONE: tune
+tune:
+	@echo "Running Llama 3.1 8B fine-tuning..."
+	@uv run --env-file .env -m src.go_ast_tokenizer.train
+
 .PHONY: test
 test:
 	@echo "Running tests..."
