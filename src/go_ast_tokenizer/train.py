@@ -1,10 +1,11 @@
 """
-Fine-tuning Llama 3.1 model.
+Fine-tuning Llama 3 model.
 """
 
 import lightning as L
 import torch
 import torchmetrics
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from peft import LoraConfig, get_peft_model
@@ -13,7 +14,7 @@ from transformers import AutoTokenizer, LlamaForCausalLM  # type: ignore
 from src.go_ast_tokenizer.data_loader import SEED, AlpacaDataModule
 from src.go_ast_tokenizer.utils import load_config
 
-MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
+MODEL_ID = "meta-llama/Llama-3.2-1B"
 
 
 class Llama3Model(L.LightningModule):
@@ -27,12 +28,12 @@ class Llama3Model(L.LightningModule):
         lora_dropout: float,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["model"])
         self.learning_rate = learning_rate
 
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         if tokenizer.pad_token_id is None:
-            print(f"Using eos_token_id ({tokenizer.eos_token_id}) as pad_token_id.")
+            print(f"Using eos_token_id ({tokenizer.eos_token_id}) as pad_token_id")
             tokenizer.pad_token_id = tokenizer.eos_token_id
         self.tokenizer = tokenizer
 
@@ -112,10 +113,16 @@ def main() -> None:
     data = AlpacaDataModule(tokenizer=model.tokenizer)
     logger = CSVLogger(save_dir="./reports")
 
+    model_checkpoint = ModelCheckpoint(
+        save_top_k=1, mode="min", monitor="avg_val_loss", every_n_epochs=1, save_last=True
+    )
+
     trainer = L.Trainer(
-        fast_dev_run=True,
         logger=logger,
+        callbacks=[model_checkpoint],
         max_epochs=int(training_config["max_epochs"]),
+        val_check_interval=10,
+        log_every_n_steps=10,
         accelerator=training_config["accelerator"],
         devices="auto",
         deterministic=True,
@@ -124,6 +131,13 @@ def main() -> None:
     trainer.print("Starting training ...")
     trainer.fit(model, datamodule=data)
     trainer.print("Training successfully completed!")
+
+    path = model_checkpoint.best_model_path
+    print(f"Saving best model to {path}")
+
+    trainer.print("Starting evaluation ...")
+    trainer.test(model, datamodule=data, ckpt_path="best")
+    trainer.print("Evaluation successfully completed!")
 
 
 if __name__ == "__main__":
