@@ -41,6 +41,14 @@
 
 ## Usage
 
+### Model Fine-tuning
+
+Run the Llama 3 fine-tuning with:
+
+```bash
+make tune
+```
+
 ## Development
 
 ### Code Quality Checks
