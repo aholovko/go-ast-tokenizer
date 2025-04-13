@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=2.2.4",
     "pandas>=2.2.3",
     "peft>=0.15.1",
+    "smart-open[s3]>=7.1.0",
     "torch>=2.5.0",
     "torchmetrics>=1.7.1",
     "tqdm>=4.67.1",
@@ -24,8 +25,12 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
 [dependency-groups]
 dev = [
+    "ipykernel>=6.29.5",
     "pyright>=1.1.399",
     "pytest>=8.3.5",
     "ruff>=0.11.4",

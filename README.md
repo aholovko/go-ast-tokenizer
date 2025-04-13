@@ -19,6 +19,12 @@
 │   └── figures/                   <- Generated figures
 ├── src/
 │   └── go_ast_tokenizer/
+│       ├── checker/
+│       │   ├── checker.go
+│       │   ├── checker_test.go
+│       │   ├── export.go
+│       │   ├── go.mod
+│       │   └── go.sum
 │       ├── tokenizer/
 │       │   ├── go.mod
 │       │   ├── tokenizer.go
@@ -79,6 +85,38 @@ or
 ```bash
 python -m pytest tests/ -v
 ```
+
+### Build Style Checker
+
+Build and test the Go style checker with:
+
+```bash
+make checker
+```
+
+This command:
+1. Runs the Go tests for the checker package
+2. Builds the checker as a shared library for use by Python
+
+### Jupyter Notebook
+
+#### Setup Jupyter Kernel
+
+Install a dedicated Jupyter kernel for this project:
+
+```bash
+make jupyter-kernel
+```
+
+#### Run Jupyter Lab
+
+Start Jupyter Lab:
+
+```bash
+make lab
+```
+
+This launches Jupyter Lab with the ./notebooks directory as the root.
 
 ## License
 
