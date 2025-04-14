@@ -16,3 +16,5 @@ wheels/
 checkpoints/
 data/
 reports/
+_checkstyle.h
+_checkstyle.so

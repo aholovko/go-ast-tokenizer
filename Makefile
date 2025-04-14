@@ -30,3 +30,19 @@ format:
 typecheck:
 	@echo "Type checking code..."
 	@uv run pyright
+
+.PHONY: checker
+checker:
+	@echo "Building and testing style checker..."
+	@cd src/go_ast_tokenizer/checker && go test -v . && go build -o _checkstyle.so -buildmode=c-shared .
+
+.PHONY: jupyter-kernel
+jupyter-kernel:
+	@echo "Installing Jupyter kernel..."
+	@uv run -- ipython kernel install --user --env VIRTUAL_ENV $(pwd)/.venv --name=go-ast-tokenizer
+	@echo "Start Jupyter Lab with 'make lab'"
+
+.PHONY: lab
+lab:
+	@echo "Starting Jupyter Lab..."
+	@uv run --env-file .env --with jupyter jupyter lab --no-browser --notebook-dir=./notebooks
