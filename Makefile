@@ -36,6 +36,11 @@ checker:
 	@echo "Building and testing style checker..."
 	@cd src/go_ast_tokenizer/checker && go test -v . && go build -o _checkstyle.so -buildmode=c-shared .
 
+.PHONY: dataset
+dataset: checker
+	@echo "Building go-critic-style dataset..."
+	@uv run --env-file .env -m src.go_ast_tokenizer.dataset_builder
+
 .PHONY: jupyter-kernel
 jupyter-kernel:
 	@echo "Installing Jupyter kernel..."

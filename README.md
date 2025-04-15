@@ -98,6 +98,21 @@ This command:
 1. Runs the Go tests for the checker package
 2. Builds the checker as a shared library for use by Python
 
+### Build Dataset
+
+Generate the dataset with:
+
+```bash
+make dataset
+```
+
+This command:
+1. Pulls the "Go" split of [bigcode/the‑stack‑v2‑dedup](https://huggingface.co/datasets/bigcode/the-stack-v2-dedup)
+2. Runs go‑critic (style group) → labels each snippet
+3. Pushes dataset and README to 🤗 ${HF_USERNAME}/go-critic-style
+
+**Note:** Required in `.env`: AWS_PROFILE_NAME, AWS_ROLE_ARN, AWS_SESSION_NAME, HF_USERNAME, HF_TOKEN
+
 ### Jupyter Notebook
 
 #### Setup Jupyter Kernel

@@ -10,7 +10,7 @@ from datasets import Dataset as HFDataset
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
 
-SEED = 84
+SEED = 2357
 DATASET_ID = "yahma/alpaca-cleaned"
 
 
