@@ -9,11 +9,14 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=3.5.0",
+    "huggingface-hub>=0.30.2",
+    "iterative-stratification>=0.1.9",
     "lightning>=2.5.1",
     "matplotlib>=3.10.1",
     "numpy>=2.2.4",
     "pandas>=2.2.3",
     "peft>=0.15.1",
+    "scikit-learn>=1.6.1",
     "smart-open[s3]>=7.1.0",
     "torch>=2.5.0",
     "torchmetrics>=1.7.1",
