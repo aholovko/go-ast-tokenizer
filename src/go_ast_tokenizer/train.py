@@ -1,143 +1,121 @@
-"""
-Fine-tuning Llama 3 model.
-"""
+from dataclasses import dataclass
+from typing import Literal
 
 import lightning as L
 import torch
+import torch.nn as nn
 import torchmetrics
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
-from lightning.pytorch.utilities.types import OptimizerLRScheduler
-from peft import LoraConfig, get_peft_model
-from transformers import AutoTokenizer, LlamaForCausalLM  # type: ignore
+from transformers import AutoConfig, AutoTokenizer, LlamaForSequenceClassification, LlamaTokenizer  # type: ignore
 
-from src.go_ast_tokenizer.data_loader import SEED, AlpacaDataModule
-from src.go_ast_tokenizer.utils import load_config
-
-MODEL_ID = "meta-llama/Llama-3.2-1B"
+from src.go_ast_tokenizer.data_loader import SEED, DataConfig, GoCriticStyleDataModule
 
 
-class Llama3Model(L.LightningModule):
-    def __init__(
-        self,
-        model_id: str,
-        learning_rate: float,
-        lora_r: int,
-        lora_alpha: int,
-        lora_target_modules: list[str],
-        lora_dropout: float,
-    ) -> None:
+@dataclass(frozen=True)
+class HParams:
+    model_id: str = "meta-llama/Llama-3.2-1B"
+    max_length: int = 4096
+    batch_size: int = 8
+    num_workers: int = 4
+    lr: float = 1e-5
+    max_epochs: int = 3
+    num_labels: int = 8
+    seed: int = SEED
+
+
+class Llama3Classifier(L.LightningModule):
+    def __init__(self, params: HParams) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["model"])
-        self.learning_rate = learning_rate
 
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.save_hyperparameters("params")
+        self.params: HParams = params
+
+        # --- tokenizer + model setup ---
+        tokenizer = AutoTokenizer.from_pretrained(params.model_id)
         if tokenizer.pad_token_id is None:
-            print(f"Using eos_token_id ({tokenizer.eos_token_id}) as pad_token_id")
             tokenizer.pad_token_id = tokenizer.eos_token_id
-        self.tokenizer = tokenizer
+        self.tokenizer: LlamaTokenizer = tokenizer
 
-        model = LlamaForCausalLM.from_pretrained(
-            model_id,
-            torch_dtype=torch.float16,
+        config = AutoConfig.from_pretrained(
+            params.model_id,
+            num_labels=params.num_labels,
+            problem_type="multi_label_classification",
+        )
+        config.pad_token_id = tokenizer.pad_token_id
+
+        model = LlamaForSequenceClassification.from_pretrained(
+            params.model_id,
+            config=config,
             device_map="auto",
+            # torch_dtype=torch.float16,
         )
 
-        if len(tokenizer) > model.get_input_embeddings().weight.size(0):  # type: ignore
-            print("Resizing the embedding matrix to match the tokenizer vocabulary size!")
-            model.resize_token_embeddings(len(tokenizer))
+        # freeze everything except the head
+        for name, param in model.named_parameters():
+            param.requires_grad = name.startswith("score")
 
-        lora_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            target_modules=lora_target_modules,
-            lora_dropout=lora_dropout,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-        self.model = get_peft_model(model, lora_config)
+        self.model = model
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.train_acc = torchmetrics.Accuracy(task="multilabel", num_labels=params.num_labels)
+        self.val_acc = torchmetrics.Accuracy(task="multilabel", num_labels=params.num_labels)
 
-        self.train_loss_metric = torchmetrics.MeanMetric()
-        self.val_loss_metric = torchmetrics.MeanMetric()
+    def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        return self.model(input_ids=input_ids, attention_mask=attention_mask).logits
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=input_ids)
-        return outputs.loss
+    def training_step(self, batch, batch_idx):
+        return self._run_step(batch, "train")
 
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        loss = self(batch["input_ids"], batch["attention_mask"])
-        self.train_loss_metric.update(loss.detach())
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+    def validation_step(self, batch, batch_idx):
+        return self._run_step(batch, "val")
+
+    def _run_step(self, batch: dict[str, torch.Tensor], stage: Literal["train", "val"]):
+        logits = self(batch["input_ids"], batch["attention_mask"])
+        labels = batch["labels"].to(logits.dtype)
+
+        loss = self.criterion(logits, labels)
+        preds = torch.sigmoid(logits)
+
+        self.log(f"{stage}/loss", loss, prog_bar=True, on_epoch=True)
+        metric = self.train_acc if stage == "train" else self.val_acc
+        metric.update(preds, batch["labels"])
+        self.log(f"{stage}/acc", metric, prog_bar=True, on_epoch=True)
+
         return loss
 
-    def on_train_epoch_end(self) -> None:
-        avg_loss = self.train_loss_metric.compute()
-        perplexity = torch.exp(avg_loss)
-        self.log("avg_train_loss", avg_loss, prog_bar=True)
-        self.log("train_perplexity", perplexity, prog_bar=True)
-        self.train_loss_metric.reset()
-
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        loss = self(batch["input_ids"], batch["attention_mask"])
-        self.val_loss_metric.update(loss.detach())
-        self.log("val_loss", loss, prog_bar=True)
-        return loss
-
-    def on_validation_epoch_end(self) -> None:
-        avg_loss = self.val_loss_metric.compute()
-        perplexity = torch.exp(avg_loss)
-        self.log("avg_val_loss", avg_loss, prog_bar=True)
-        self.log("val_perplexity", perplexity, prog_bar=True)
-        self.val_loss_metric.reset()
-
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        return torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, foreach=True)
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.model.parameters(), lr=self.params.lr)
 
 
-def main() -> None:
-    config = load_config()
-    training_config = config["training"]
-    lora_config = config["lora"]
+def main():
+    params = HParams()
+    L.seed_everything(params.seed)
 
-    L.seed_everything(SEED)
+    model = Llama3Classifier(params)
 
-    model = Llama3Model(
-        model_id=MODEL_ID,
-        learning_rate=float(training_config["learning_rate"]),
-        lora_r=int(lora_config["r"]),
-        lora_alpha=int(lora_config["alpha"]),
-        lora_target_modules=lora_config["target_modules"],
-        lora_dropout=float(lora_config["dropout"]),
+    config = DataConfig(
+        max_length=params.max_length,
+        batch_size=params.batch_size,
+        num_workers=params.num_workers,
     )
 
-    data = AlpacaDataModule(tokenizer=model.tokenizer)
-    logger = CSVLogger(save_dir="./reports")
-
-    model_checkpoint = ModelCheckpoint(
-        save_top_k=1, mode="min", monitor="avg_val_loss", every_n_epochs=1, save_last=True
+    data_module = GoCriticStyleDataModule(
+        tokenizer=model.tokenizer,
+        config=config,
     )
 
     trainer = L.Trainer(
-        logger=logger,
-        callbacks=[model_checkpoint],
-        max_epochs=int(training_config["max_epochs"]),
-        val_check_interval=10,
-        log_every_n_steps=10,
-        accelerator=training_config["accelerator"],
+        max_epochs=params.max_epochs,
+        accelerator="auto",
         devices="auto",
+        # precision=16,
         deterministic=True,
+        logger=CSVLogger("./reports"),
+        callbacks=[ModelCheckpoint(monitor="val/loss", mode="min", save_top_k=1, save_last=True)],
     )
 
-    trainer.print("Starting training ...")
-    trainer.fit(model, datamodule=data)
-    trainer.print("Training successfully completed!")
-
-    path = model_checkpoint.best_model_path
-    print(f"Saving best model to {path}")
-
-    trainer.print("Starting evaluation ...")
-    trainer.test(model, datamodule=data, ckpt_path="best")
-    trainer.print("Evaluation successfully completed!")
+    trainer.fit(model, datamodule=data_module)
+    trainer.validate(model, datamodule=data_module)
 
 
 if __name__ == "__main__":
