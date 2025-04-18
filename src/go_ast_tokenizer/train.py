@@ -22,6 +22,7 @@ class HParams:
     max_epochs: int = 3
     num_labels: int = 8
     seed: int = SEED
+    use_fp16: bool = False
 
 
 class Llama3Classifier(L.LightningModule):
@@ -48,7 +49,6 @@ class Llama3Classifier(L.LightningModule):
             params.model_id,
             config=config,
             device_map="auto",
-            # torch_dtype=torch.float16,
         )
 
         # freeze everything except the head
@@ -59,6 +59,9 @@ class Llama3Classifier(L.LightningModule):
         self.criterion = nn.BCEWithLogitsLoss()
         self.train_acc = torchmetrics.Accuracy(task="multilabel", num_labels=params.num_labels)
         self.val_acc = torchmetrics.Accuracy(task="multilabel", num_labels=params.num_labels)
+        self.val_f1 = torchmetrics.F1Score(task="multilabel", num_labels=params.num_labels, average="macro")
+        self.test_acc = torchmetrics.Accuracy(task="multilabel", num_labels=params.num_labels)
+        self.test_f1 = torchmetrics.F1Score(task="multilabel", num_labels=params.num_labels, average="macro")
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
         return self.model(input_ids=input_ids, attention_mask=attention_mask).logits
@@ -69,7 +72,10 @@ class Llama3Classifier(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self._run_step(batch, "val")
 
-    def _run_step(self, batch: dict[str, torch.Tensor], stage: Literal["train", "val"]):
+    def test_step(self, batch, batch_idx):
+        return self._run_step(batch, "test")
+
+    def _run_step(self, batch: dict[str, torch.Tensor], stage: Literal["train", "val", "test"]) -> torch.Tensor:
         logits = self(batch["input_ids"], batch["attention_mask"])
         labels = batch["labels"].to(logits.dtype)
 
@@ -77,9 +83,17 @@ class Llama3Classifier(L.LightningModule):
         preds = torch.sigmoid(logits)
 
         self.log(f"{stage}/loss", loss, prog_bar=True, on_epoch=True)
-        metric = self.train_acc if stage == "train" else self.val_acc
-        metric.update(preds, batch["labels"])
-        self.log(f"{stage}/acc", metric, prog_bar=True, on_epoch=True)
+
+        metrics = {
+            "train": {"acc": self.train_acc},
+            "val": {"acc": self.val_acc, "f1_macro": self.val_f1},
+            "test": {"acc": self.test_acc, "f1_macro": self.test_f1},
+        }[stage]
+
+        for name, metric in metrics.items():
+            metric.update(preds, batch["labels"])
+            metric_name = f"{stage}/{name}" if not name.startswith("f1") else f"{stage}/{name}"
+            self.log(metric_name, metric, prog_bar=True, on_epoch=True)
 
         return loss
 
@@ -108,14 +122,14 @@ def main():
         max_epochs=params.max_epochs,
         accelerator="auto",
         devices="auto",
-        # precision=16,
+        precision=16 if params.use_fp16 else 32,
         deterministic=True,
         logger=CSVLogger("./reports"),
         callbacks=[ModelCheckpoint(monitor="val/loss", mode="min", save_top_k=1, save_last=True)],
     )
 
     trainer.fit(model, datamodule=data_module)
-    trainer.validate(model, datamodule=data_module)
+    trainer.test(model, datamodule=data_module)
 
 
 if __name__ == "__main__":
