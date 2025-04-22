@@ -2,14 +2,13 @@
 Utility functions.
 """
 
-import os
-from typing import Any, Dict
-
-import yaml
+from transformers import AutoTokenizer, LlamaTokenizer  # type: ignore
 
 
-def load_config(config_filename: str = "config.yaml") -> Dict[str, Any]:
-    config_path = os.path.join(os.path.dirname(__file__), config_filename)
-    with open(config_path, "r") as file:
-        config = yaml.safe_load(file)
-    return config
+def get_tokenizer(model_id: str) -> LlamaTokenizer:
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    return tokenizer

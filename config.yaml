@@ -1,0 +1,27 @@
+# lightning.pytorch==2.5.1
+seed_everything: 2357
+model:
+  learning_rate: 1.0e-05
+data:
+  batch_size: 8
+  num_workers: 4
+trainer:
+  accelerator: auto
+  devices: auto
+  precision: "bf16-mixed"
+  max_epochs: 10
+  deterministic: True
+  logger:
+    - class_path: lightning.pytorch.loggers.CSVLogger
+      init_args:
+          save_dir: ./
+    - class_path: lightning.pytorch.loggers.WandbLogger
+      init_args:
+        project: syntax-aware-tokenizer
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 1
+        save_last: true

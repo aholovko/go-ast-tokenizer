@@ -11,6 +11,7 @@ dependencies = [
     "datasets>=3.5.0",
     "huggingface-hub>=0.30.2",
     "iterative-stratification>=0.1.9",
+    "jsonargparse[signatures]>=4.38.0",
     "lightning>=2.5.1",
     "matplotlib>=3.10.1",
     "numpy>=2.2.4",
@@ -22,6 +23,7 @@ dependencies = [
     "torchmetrics>=1.7.1",
     "tqdm>=4.67.1",
     "transformers>=4.51.1",
+    "wandb>=0.19.9",
 ]
 
 [build-system]

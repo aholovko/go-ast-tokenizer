@@ -13,10 +13,8 @@
 ## Project Structure
 
 ```
-├── checkpoints/                   <- Model's checkpoints
-├── data/                          <- Dataset
-├── reports/                       <- Generated reports
-│   └── figures/                   <- Generated figures
+├── data/                          <- Raw data
+├── notebooks/                     <- Jupyter notebooks
 ├── src/
 │   └── go_ast_tokenizer/
 │       ├── checker/
@@ -30,14 +28,16 @@
 │       │   ├── tokenizer.go
 │       │   └── tokenizer_test.go
 │       ├── __init__.py
-│       ├── config.yaml
-│       ├── data_loader.py
-│       ├── dataset_builder.py
-│       ├── tokenizer.py           <- wrapper for Go tokenizer
-│       ├── train.py
+│       ├── dataset.py             <- Dataset and data module
+│       ├── dataset_builder.py     <- Dataset builder
+│       ├── dataset_card.py        <- Dataset info card for Hugging Face
+│       ├── go_style_checker.py    <- Style checker wrapper
+│       ├── main.py                <- Entry point
+│       ├── model.py               <- Model definition
+│       ├── tokenizer.py           <- Wrapper for Go tokenizer
 │       └── utils.py
 ├── tests/                         <- Unit tests
-│   └── test_tokenizer.py
+├── config.yaml                    <- Configuration file for LightningCLI
 ├── LICENSE
 ├── Makefile
 ├── pyproject.toml

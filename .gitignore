@@ -13,9 +13,9 @@ wheels/
 .ruff_cache/
 
 # Project-specific artifacts
-checkpoints/
 data/
-reports/
+lightning_logs/
+wandb/
 _checkstyle.h
 _checkstyle.so
 *.jsonl
