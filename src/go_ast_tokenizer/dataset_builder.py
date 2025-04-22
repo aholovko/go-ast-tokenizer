@@ -6,6 +6,7 @@ import json
 import os
 import time
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 import boto3
@@ -20,16 +21,17 @@ from transformers import AutoTokenizer  # type: ignore
 from src.go_ast_tokenizer.dataset_card import DATASET_CARD
 from src.go_ast_tokenizer.go_style_checker import GoStyleChecker
 
-MODEL_ID = "meta-llama/Llama-3.2-1B"
 
-TOKENS_LENGTH_CUTOFF = 4000
-LABELS_NUMBER_CUTOFF = 300
+@dataclass(frozen=True)
+class Config:
+    model_id: str = "meta-llama/Llama-3.2-1B"
+    dataset_name: str = "aholovko/go-critic-style"
+    dataset_output_file: str = "dataset-go-critic-style.jsonl"
+    dataset_size: int = 2400
+    tokens_length_cutoff: int = 4000
+    labels_number_cutoff: int = 300
+    seed: int = 2357
 
-DATASET_SIZE = 2400
-DATASET_OUTPUT_FILE = "dataset-go-critic-style.jsonl"
-DATASET_NAME = "go-critic-style"
-
-SEED = 2357
 
 LABEL_NAMES = [
     "assignOp",
@@ -41,13 +43,14 @@ LABEL_NAMES = [
     "paramTypeCombine",
     "singleCaseSwitch",
 ]
-ALLOWED_LABELS = set(LABEL_NAMES)
+SUPPORTED_LABELS = set(LABEL_NAMES)
 LABEL_TO_ID = {label: idx for idx, label in enumerate(LABEL_NAMES)}
 
 
 class GoCriticStyleDatasetBuilder:
-    def __init__(self) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model_id)
         self.s3_client = self._create_s3_client()
         self.style_checker = GoStyleChecker()
 
@@ -94,7 +97,7 @@ class GoCriticStyleDatasetBuilder:
 
         snippet = self._download_with_retry(blob_id, encoding)
 
-        if len(self.tokenizer.encode(snippet)) > TOKENS_LENGTH_CUTOFF:
+        if len(self.tokenizer.encode(snippet)) > self.config.tokens_length_cutoff:
             stats["num_too_long"] += 1
             return None
 
@@ -103,12 +106,12 @@ class GoCriticStyleDatasetBuilder:
         except Exception:
             warnings = []
 
-        allowed_warnings = [w for w in warnings if w in ALLOWED_LABELS]
+        allowed_warnings = [w for w in warnings if w in SUPPORTED_LABELS]
         if not allowed_warnings:
             stats["num_no_warnings"] += 1
             return None
 
-        if any(label_counter[label] >= LABELS_NUMBER_CUTOFF for label in allowed_warnings):
+        if any(label_counter[label] >= self.config.labels_number_cutoff for label in allowed_warnings):
             stats["num_labels_cutoff"] += 1
             return None
 
@@ -132,7 +135,7 @@ class GoCriticStyleDatasetBuilder:
         dataset = load_dataset("bigcode/the-stack-v2-dedup", "Go", split="train", streaming=True)
 
         output_dir = Path("./data")
-        output_path = output_dir / DATASET_OUTPUT_FILE
+        output_path = output_dir / self.config.dataset_output_file
 
         stats = {
             "num_total_seen": 0,
@@ -153,9 +156,9 @@ class GoCriticStyleDatasetBuilder:
                 stats["num_records_written"] += 1
 
                 if stats["num_records_written"] % 100 == 0:
-                    print(f"Progress: {stats['num_records_written']}/{DATASET_SIZE}")
+                    print(f"Progress: {stats['num_records_written']}/{self.config.dataset_size}")
 
-                if stats["num_records_written"] >= DATASET_SIZE:
+                if stats["num_records_written"] >= self.config.dataset_size:
                     break
 
         self._print_stats(stats, label_counter)
@@ -172,20 +175,19 @@ class GoCriticStyleDatasetBuilder:
         df["labels"] = df["labels"].apply(lambda labels: [LABEL_TO_ID[label] for label in labels])
         return df
 
-    @staticmethod
-    def _split_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def _split_data(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         mlb = MultiLabelBinarizer()
         binary_labels = mlb.fit_transform(df["labels"])
 
         # split into train and temporary sets (70:30)
-        split1 = MultilabelStratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=SEED)  # type: ignore
+        split1 = MultilabelStratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=self.config.seed)  # type: ignore
         train_idx, temp_idx = next(split1.split(df, binary_labels))
         train_df = df.iloc[train_idx].reset_index(drop=True)
         temp_df = df.iloc[temp_idx].reset_index(drop=True)
         temp_binary_labels = binary_labels[temp_idx]
 
         # split the temporary set into validation and test sets (validation:test = 1:2)
-        split2 = MultilabelStratifiedShuffleSplit(n_splits=1, test_size=2 / 3, random_state=SEED)  # type: ignore
+        split2 = MultilabelStratifiedShuffleSplit(n_splits=1, test_size=2 / 3, random_state=self.config.seed)  # type: ignore
         val_idx, test_idx = next(split2.split(temp_df, temp_binary_labels))
         val_df = temp_df.iloc[val_idx].reset_index(drop=True)
         test_df = temp_df.iloc[test_idx].reset_index(drop=True)
@@ -208,20 +210,18 @@ class GoCriticStyleDatasetBuilder:
             }
         )
 
-    @staticmethod
-    def dataset_exists_on_hf() -> bool:
+    def dataset_exists_on_hf(self) -> bool:
         hf_api = HfApi()
         try:
-            repo_id = f"{os.environ['HF_USERNAME']}/{DATASET_NAME}"
+            repo_id = f"{os.environ['HF_USERNAME']}/{self.config.dataset_name}"
             hf_api.dataset_info(repo_id=repo_id)
             return True
         except Exception:
             return False
 
-    @staticmethod
-    def upload_to_hf(dataset_dict: DatasetDict) -> None:
+    def upload_to_hf(self, dataset_dict: DatasetDict) -> None:
         # create the dataset repository
-        repo_id = f"{os.environ['HF_USERNAME']}/{DATASET_NAME}"
+        repo_id = f"{os.environ['HF_USERNAME']}/{self.config.dataset_name}"
         create_repo(repo_id, token=os.environ["HF_TOKEN"], repo_type="dataset", exist_ok=True)
 
         # save dataset_dict to the hub
@@ -242,9 +242,10 @@ class GoCriticStyleDatasetBuilder:
 
 
 def main() -> None:
-    builder = GoCriticStyleDatasetBuilder()
+    config = Config()
+    builder = GoCriticStyleDatasetBuilder(config)
 
-    dataset_path = Path("./data") / DATASET_OUTPUT_FILE
+    dataset_path = Path("./data") / config.dataset_output_file
     if not dataset_path.exists():
         print("Dataset not found. Downloading...")
         builder.download_dataset()

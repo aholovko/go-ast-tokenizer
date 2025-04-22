@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Optional, cast
 
 import lightning as L
@@ -9,15 +8,12 @@ from datasets import DatasetDict, load_dataset
 from torch.utils.data import DataLoader, Dataset
 from transformers import BatchEncoding, DataCollatorWithPadding, LlamaTokenizer  # type: ignore
 
-SEED = 2357
+from src.go_ast_tokenizer.utils import get_tokenizer
 
-
-@dataclass(frozen=True)
-class DataConfig:
-    dataset_name: str = "aholovko/go-critic-style"
-    max_length: int = 4096
-    batch_size: int = 8
-    num_workers: int = 4
+TOKENIZER_MODEL_ID = "meta-llama/Llama-3.2-1B"
+DATASET_NAME = "aholovko/go-critic-style"
+MAX_LENGTH = 4096
+NUM_LABELS = 8
 
 
 class GoCriticStyleDataset(Dataset):
@@ -27,6 +23,8 @@ class GoCriticStyleDataset(Dataset):
         tokenizer: LlamaTokenizer,
         max_length: int,
     ) -> None:
+        super().__init__()
+
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -52,9 +50,9 @@ class GoCriticStyleDataset(Dataset):
         input_ids = cast(torch.Tensor, encoding["input_ids"]).squeeze(0)
         attention_mask = cast(torch.Tensor, encoding["attention_mask"]).squeeze(0).to(torch.float)
 
-        # one‑hot encode labels
-        idxs = torch.as_tensor(raw["labels"], dtype=torch.long)
-        labels = F.one_hot(idxs, num_classes=self.num_classes).sum(dim=0).to(torch.float)
+        # one‑hot encode labels (TODO: check if this is correct)
+        indices = torch.as_tensor(raw["labels"], dtype=torch.long)
+        labels = F.one_hot(indices, num_classes=self.num_classes).sum(dim=0).to(torch.float)
 
         return {
             "input_ids": input_ids,
@@ -66,43 +64,46 @@ class GoCriticStyleDataset(Dataset):
 class GoCriticStyleDataModule(L.LightningDataModule):
     def __init__(
         self,
-        tokenizer: LlamaTokenizer,
-        config: DataConfig,
+        batch_size: int,
+        num_workers: int,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters("config")
-        self.tokenizer = tokenizer
-        self.config = config
+        self.save_hyperparameters()
+
+        self.tokenizer = get_tokenizer(TOKENIZER_MODEL_ID)
+        self.dataset_name = DATASET_NAME
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.max_length = MAX_LENGTH
 
         self.train_dataset: Optional[GoCriticStyleDataset] = None
         self.val_dataset: Optional[GoCriticStyleDataset] = None
         self.test_dataset: Optional[GoCriticStyleDataset] = None
 
-        self.collator = DataCollatorWithPadding(tokenizer, padding="longest")
+        self.collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def prepare_data(self) -> None:
-        load_dataset(self.config.dataset_name)
+        load_dataset(self.dataset_name)
 
     def setup(self, stage: Optional[str] = None) -> None:
-        raw = load_dataset(self.config.dataset_name)
+        raw = load_dataset(self.dataset_name)
         ds = cast(DatasetDict, raw)
 
-        self.train_dataset = GoCriticStyleDataset(ds["train"], self.tokenizer, self.config.max_length)
-        self.val_dataset = GoCriticStyleDataset(ds["validation"], self.tokenizer, self.config.max_length)
-        self.test_dataset = GoCriticStyleDataset(ds["test"], self.tokenizer, self.config.max_length)
+        self.train_dataset = GoCriticStyleDataset(ds["train"], self.tokenizer, MAX_LENGTH)
+        self.val_dataset = GoCriticStyleDataset(ds["validation"], self.tokenizer, MAX_LENGTH)
+        self.test_dataset = GoCriticStyleDataset(ds["test"], self.tokenizer, MAX_LENGTH)
 
     def train_dataloader(self) -> DataLoader:
         ds = self.train_dataset
         assert ds is not None, "setup() must be called before train_dataloader()"
         return DataLoader(
             ds,
-            batch_size=self.config.batch_size,
+            batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.config.num_workers,
+            num_workers=self.num_workers,
             pin_memory=True,
             drop_last=True,
             collate_fn=self.collator,
-            generator=torch.Generator().manual_seed(SEED),
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -110,9 +111,9 @@ class GoCriticStyleDataModule(L.LightningDataModule):
         assert ds is not None, "setup() must be called before val_dataloader()"
         return DataLoader(
             ds,
-            batch_size=self.config.batch_size,
+            batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.config.num_workers,
+            num_workers=self.num_workers,
             persistent_workers=True,
             pin_memory=True,
             drop_last=False,
@@ -124,9 +125,9 @@ class GoCriticStyleDataModule(L.LightningDataModule):
         assert ds is not None, "setup() must be called before test_dataloader()"
         return DataLoader(
             ds,
-            batch_size=self.config.batch_size,
+            batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.config.num_workers,
+            num_workers=self.num_workers,
             pin_memory=True,
             drop_last=False,
             collate_fn=self.collator,

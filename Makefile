@@ -1,7 +1,7 @@
 .PHONE: tune
 tune:
 	@echo "Running Llama 3 fine-tuning..."
-	@uv run --env-file .env -m src.go_ast_tokenizer.train
+	@uv run --env-file .env -m src.go_ast_tokenizer.main fit --config config.yaml
 
 .PHONY: test
 test:
