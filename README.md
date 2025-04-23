@@ -74,10 +74,10 @@ Run the Llama 3 fine-tuning with:
 make fit
 ```
 
-To evaluate the fine-tuned Llama 3 model on test data using the best checkpoint:
+To evaluate the fine-tuned model on test data:
 
 ```bash
-make test
+uv run --env-file .env -m src.go_ast_tokenizer.main test --config config.yaml --ckpt_path <path_to_checkpoint>
 ```
 
 ## Development
