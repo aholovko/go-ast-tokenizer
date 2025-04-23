@@ -47,12 +47,37 @@
 
 ## Usage
 
+### Configuration
+
+The project uses a `config.yaml` file to configure model training parameters:
+
+```yaml
+seed_everything: 2357         # Random seed for reproducibility
+model:
+  learning_rate: 1.0e-05      # Learning rate for optimizer
+data:
+  batch_size: 8               # Batch size for training
+  num_workers: 4              # DataLoader workers
+trainer:
+  precision: "bf16-mixed"     # Training precision (bf16, 16, 32)
+  max_epochs: 10              # Maximum training epochs
+  # More options in the file...
+```
+
+You can modify these parameters in the configuration file to adjust training behavior.
+
 ### Model Fine-tuning
 
 Run the Llama 3 fine-tuning with:
 
 ```bash
-make tune
+make fit
+```
+
+To evaluate the fine-tuned Llama 3 model on test data using the best checkpoint:
+
+```bash
+make test
 ```
 
 ## Development
@@ -76,14 +101,14 @@ You can also run each check individually as needed.
 
 ### Run Tests
 
-Run the test suite with:
+To run unit tests:
 
 ```bash
-make test
+make unit-test
 ```
 or
 ```bash
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ### Build Style Checker

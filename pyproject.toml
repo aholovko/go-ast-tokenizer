@@ -23,7 +23,6 @@ dependencies = [
     "torchmetrics>=1.7.1",
     "tqdm>=4.67.1",
     "transformers>=4.51.1",
-    "wandb>=0.19.9",
 ]
 
 [build-system]
