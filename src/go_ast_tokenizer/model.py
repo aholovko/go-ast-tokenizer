@@ -3,7 +3,7 @@ from typing import Literal
 import lightning as L
 import torch
 from torch import nn
-from torchmetrics import Accuracy, F1Score
+from torchmetrics import Accuracy, F1Score, MeanMetric, MetricCollection
 from transformers import AutoConfig, LlamaForSequenceClassification  # type: ignore
 
 from src.go_ast_tokenizer.dataset import NUM_LABELS
@@ -11,15 +11,19 @@ from src.go_ast_tokenizer.utils import get_tokenizer
 
 BASE_MODEL_ID = "meta-llama/Llama-3.2-1B"
 
+# enable Tensor-Core precision trading for float32 matmuls
+torch.set_float32_matmul_precision("medium")
+
 
 class Llama3Classifier(L.LightningModule):
     def __init__(self, learning_rate: float = 1e-5) -> None:
         super().__init__()
         self.save_hyperparameters()
 
-        self.learning_rate: float = learning_rate
+        self.learning_rate = learning_rate
 
         tokenizer = get_tokenizer(BASE_MODEL_ID)
+
         config = AutoConfig.from_pretrained(
             BASE_MODEL_ID,
             num_labels=NUM_LABELS,
@@ -38,13 +42,17 @@ class Llama3Classifier(L.LightningModule):
             param.requires_grad = name.startswith("score")
 
         self.loss_fn = nn.BCEWithLogitsLoss()
-        self.metrics = {
-            stage: {
-                "acc": Accuracy(task="multilabel", num_labels=NUM_LABELS),
-                "f1": F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
-            }
-            for stage in ("train", "val", "test")
-        }
+        self.loss_metrics = nn.ModuleDict({f"{stage}_loss": MeanMetric() for stage in ("train", "val", "test")})
+
+        classification_metrics = MetricCollection(
+            [
+                Accuracy(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+                F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+            ]
+        )
+        self.classification_metrics = nn.ModuleDict(
+            {f"{stage}_cls": classification_metrics.clone(prefix=f"{stage}_") for stage in ("train", "val", "test")}
+        )
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
         return self.model(input_ids=input_ids, attention_mask=attention_mask).logits
@@ -69,21 +77,20 @@ class Llama3Classifier(L.LightningModule):
         loss = self.loss_fn(logits, labels)
         preds = torch.sigmoid(logits)
 
-        self.log(f"{stage}/loss", loss, on_epoch=True, prog_bar=True)
+        self.loss_metrics[f"{stage}_loss"].update(loss)  # type: ignore
+        self.classification_metrics[f"{stage}_cls"].update(preds, batch["labels"])  # type: ignore
 
-        self.metrics[stage]["acc"].update(preds, batch["labels"])
-        self.metrics[stage]["f1"].update(preds, batch["labels"])
         return loss
 
     def _epoch_end(self, stage: str):
-        acc = self.metrics[stage]["acc"].compute()
-        f1 = self.metrics[stage]["f1"].compute()
+        loss_metric = self.loss_metrics[f"{stage}_loss"].compute()  # type: ignore
+        self.log(f"{stage}_acc", loss_metric, prog_bar=True)
 
-        self.log(f"{stage}/acc", acc, prog_bar=True)
-        self.log(f"{stage}/f1_macro", f1, prog_bar=True)
+        classification_metrics = self.classification_metrics[f"{stage}_cls"].compute()  # type: ignore
+        self.log_dict(classification_metrics, prog_bar=True)
 
-        self.metrics[stage]["acc"].reset()
-        self.metrics[stage]["f1"].reset()
+        loss_metric.reset()
+        classification_metrics.reset()
 
     def on_train_epoch_end(self) -> None:
         self._epoch_end("train")
