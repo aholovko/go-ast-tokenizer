@@ -15,7 +15,6 @@ wheels/
 # Project-specific artifacts
 data/
 lightning_logs/
-wandb/
 _checkstyle.h
 _checkstyle.so
 *.jsonl
