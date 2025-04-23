@@ -45,13 +45,13 @@ class Llama3Classifier(L.LightningModule):
         self.loss_metrics = nn.ModuleDict({f"{stage}_loss": MeanMetric() for stage in ("train", "val", "test")})
 
         classification_metrics = MetricCollection(
-            [
-                Accuracy(task="multilabel", num_labels=NUM_LABELS, average="macro"),
-                F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
-            ]
+            {
+                "acc": Accuracy(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+                "f1_macro": F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+            }
         )
         self.classification_metrics = nn.ModuleDict(
-            {f"{stage}_cls": classification_metrics.clone(prefix=f"{stage}_") for stage in ("train", "val", "test")}
+            {f"{stage}_cls": classification_metrics.clone(prefix=f"{stage}/") for stage in ("train", "val", "test")}
         )
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -83,14 +83,14 @@ class Llama3Classifier(L.LightningModule):
         return loss
 
     def _epoch_end(self, stage: str):
-        loss_metric = self.loss_metrics[f"{stage}_loss"].compute()  # type: ignore
-        self.log(f"{stage}_acc", loss_metric, prog_bar=True)
+        loss = self.loss_metrics[f"{stage}_loss"].compute()  # type: ignore
+        self.log(f"{stage}/loss", loss, prog_bar=True)
 
-        classification_metrics = self.classification_metrics[f"{stage}_cls"].compute()  # type: ignore
-        self.log_dict(classification_metrics, prog_bar=True)
+        cls_metrics = self.classification_metrics[f"{stage}_cls"].compute()  # type: ignore
+        self.log_dict(cls_metrics, prog_bar=True)
 
-        loss_metric.reset()
-        classification_metrics.reset()
+        self.loss_metrics[f"{stage}_loss"].reset()  # type: ignore
+        self.classification_metrics[f"{stage}_cls"].reset()  # type: ignore
 
     def on_train_epoch_end(self) -> None:
         self._epoch_end("train")

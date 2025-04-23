@@ -1,12 +1,7 @@
 .PHONE: fit
 fit:
-	@echo "Running Llama 3 fine-tuning..."
+	@echo "Running model fine-tuning..."
 	@uv run --env-file .env -m src.go_ast_tokenizer.main fit --config config.yaml
-
-.PHONE: test
-test:
-	@echo "Evaluating Llama 3 on test data..."
-	@uv run --env-file .env -m src.go_ast_tokenizer.main test --config config.yaml --ckpt_path best
 
 .PHONY: unit-test
 unit-test:
