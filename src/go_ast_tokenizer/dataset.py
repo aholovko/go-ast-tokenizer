@@ -8,6 +8,7 @@ from datasets import DatasetDict, load_dataset
 from torch.utils.data import DataLoader, Dataset
 from transformers import BatchEncoding, DataCollatorWithPadding, LlamaTokenizer  # type: ignore
 
+from src.go_ast_tokenizer.tokenizer import GoASTTokenizer
 from src.go_ast_tokenizer.utils import get_tokenizer
 
 TOKENIZER_MODEL_ID = "meta-llama/Llama-3.2-1B"
@@ -27,6 +28,7 @@ class GoCriticStyleDataset(Dataset):
 
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
+        self.go_ast_tokenizer = GoASTTokenizer()
         self.max_length = max_length
 
         label_feature = hf_dataset.features["labels"].feature
@@ -38,9 +40,10 @@ class GoCriticStyleDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         hf = cast(HFDataset, self.dataset)
         raw = hf[idx]
+        tokenized_code = self.go_ast_tokenizer.tokenize(raw["code"])
 
         encoding: BatchEncoding = self.tokenizer(
-            raw["code"],
+            tokenized_code,
             padding="max_length",
             truncation=True,
             max_length=self.max_length,
@@ -50,7 +53,7 @@ class GoCriticStyleDataset(Dataset):
         input_ids = cast(torch.Tensor, encoding["input_ids"]).squeeze(0)
         attention_mask = cast(torch.Tensor, encoding["attention_mask"]).squeeze(0).to(torch.float)
 
-        # one‑hot encode labels (TODO: check if this is correct)
+        # one‑hot encode labels
         indices = torch.as_tensor(raw["labels"], dtype=torch.long)
         labels = F.one_hot(indices, num_classes=self.num_classes).sum(dim=0).to(torch.float)
 

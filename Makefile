@@ -31,6 +31,11 @@ typecheck:
 	@echo "Type checking code..."
 	@uv run pyright
 
+.PHONY: tokenizer
+tokenizer:
+	@echo "Building and testing Go AST tokenizer..."
+	@cd src/go_ast_tokenizer/tokenizer && go test -v . && go build -o _tokenizer.so -buildmode=c-shared .
+
 .PHONY: checker
 checker:
 	@echo "Building and testing style checker..."

@@ -1,7 +1,11 @@
+import torch
 from lightning.pytorch.cli import LightningCLI
 
 from src.go_ast_tokenizer.dataset import GoCriticStyleDataModule
 from src.go_ast_tokenizer.model import Llama3Classifier
+
+# enable Tensor-Core precision trading for float32 matmuls
+torch.set_float32_matmul_precision("medium")
 
 
 def main() -> None:
