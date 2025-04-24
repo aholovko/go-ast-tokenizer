@@ -17,4 +17,6 @@ data/
 lightning_logs/
 _checkstyle.h
 _checkstyle.so
+_tokenizer.h
+_tokenizer.so
 *.jsonl

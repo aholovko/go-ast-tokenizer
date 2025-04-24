@@ -54,8 +54,8 @@ class GoStyleChecker:
 
         try:
             cls._lib = ctypes.cdll.LoadLibrary(str(lib_path))
-        except OSError as exc:
-            raise RuntimeError(f"Failed to load shared library '{lib_path}'") from exc
+        except OSError as e:
+            raise RuntimeError(f"Failed to load shared library '{lib_path}'") from e
 
     def __init__(self) -> None:
         if getattr(self, "_initialized", False):

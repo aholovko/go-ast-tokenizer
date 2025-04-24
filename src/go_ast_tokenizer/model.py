@@ -7,12 +7,10 @@ from torchmetrics import F1Score, MeanMetric, MetricCollection, Precision, Recal
 from transformers import AutoConfig, LlamaForSequenceClassification  # type: ignore
 
 from src.go_ast_tokenizer.dataset import NUM_LABELS
+from src.go_ast_tokenizer.tokenizer import SPECIAL_TOKENS
 from src.go_ast_tokenizer.utils import get_tokenizer
 
 BASE_MODEL_ID = "meta-llama/Llama-3.2-1B"
-
-# enable Tensor-Core precision trading for float32 matmuls
-torch.set_float32_matmul_precision("medium")
 
 
 class Llama3Classifier(L.LightningModule):
@@ -23,6 +21,7 @@ class Llama3Classifier(L.LightningModule):
         self.learning_rate = learning_rate
 
         tokenizer = get_tokenizer(BASE_MODEL_ID)
+        tokenizer.add_special_tokens({"additional_special_tokens": SPECIAL_TOKENS})  # type: ignore
 
         config = AutoConfig.from_pretrained(
             BASE_MODEL_ID,
@@ -36,10 +35,15 @@ class Llama3Classifier(L.LightningModule):
             config=config,
             device_map="auto",
         )
+        self.model.resize_token_embeddings(len(tokenizer))
 
         # freeze all parameters except the classification head
         for name, param in self.model.named_parameters():
             param.requires_grad = name.startswith("score")
+
+        # unfreeze the embedding layer so new tokens can be learned
+        embedding = self.model.get_input_embeddings()
+        embedding.weight.requires_grad_(True)
 
         # loss
         self.loss_fn = nn.BCEWithLogitsLoss()
