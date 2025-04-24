@@ -3,7 +3,7 @@ from typing import Literal
 import lightning as L
 import torch
 from torch import nn
-from torchmetrics import Accuracy, F1Score, MeanMetric, MetricCollection
+from torchmetrics import F1Score, MeanMetric, MetricCollection, Precision, Recall
 from transformers import AutoConfig, LlamaForSequenceClassification  # type: ignore
 
 from src.go_ast_tokenizer.dataset import NUM_LABELS
@@ -41,17 +41,20 @@ class Llama3Classifier(L.LightningModule):
         for name, param in self.model.named_parameters():
             param.requires_grad = name.startswith("score")
 
+        # loss
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.loss_metrics = nn.ModuleDict({f"{stage}_loss": MeanMetric() for stage in ("train", "val", "test")})
 
-        classification_metrics = MetricCollection(
+        # macro-averaged precision, recall, and f1
+        cls_metrics = MetricCollection(
             {
-                "acc": Accuracy(task="multilabel", num_labels=NUM_LABELS, average="macro"),
-                "f1_macro": F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+                "precision": Precision(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+                "recall": Recall(task="multilabel", num_labels=NUM_LABELS, average="macro"),
+                "f1": F1Score(task="multilabel", num_labels=NUM_LABELS, average="macro"),
             }
         )
         self.classification_metrics = nn.ModuleDict(
-            {f"{stage}_cls": classification_metrics.clone(prefix=f"{stage}/") for stage in ("train", "val", "test")}
+            {f"{stage}_cls": cls_metrics.clone(prefix=f"{stage}/") for stage in ("train", "val", "test")}
         )
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -72,13 +75,14 @@ class Llama3Classifier(L.LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> torch.Tensor:
         logits = self(batch["input_ids"], batch["attention_mask"])
-        labels = batch["labels"].to(logits.dtype)
+        labels_float = batch["labels"].to(logits.dtype)
+        labels_int = batch["labels"].int()
 
-        loss = self.loss_fn(logits, labels)
+        loss = self.loss_fn(logits, labels_float)
         preds = torch.sigmoid(logits)
 
         self.loss_metrics[f"{stage}_loss"].update(loss)  # type: ignore
-        self.classification_metrics[f"{stage}_cls"].update(preds, batch["labels"])  # type: ignore
+        self.classification_metrics[f"{stage}_cls"].update(preds, labels_int)  # type: ignore
 
         return loss
 
