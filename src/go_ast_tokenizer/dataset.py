@@ -26,9 +26,10 @@ class GoCriticStyleDataset(Dataset):
     ) -> None:
         super().__init__()
 
+        self._go_ast_tokenizer: Optional[GoASTTokenizer] = None
+
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
-        self.go_ast_tokenizer = GoASTTokenizer()
         self.max_length = max_length
 
         label_feature = hf_dataset.features["labels"].feature
@@ -40,7 +41,12 @@ class GoCriticStyleDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         hf = cast(HFDataset, self.dataset)
         raw = hf[idx]
-        tokenized_code = self.go_ast_tokenizer.tokenize(raw["code"])
+
+        # lazy init per worker
+        if self._go_ast_tokenizer is None:
+            self._go_ast_tokenizer = GoASTTokenizer()
+
+        tokenized_code = self._go_ast_tokenizer.tokenize(raw["code"])
 
         encoding: BatchEncoding = self.tokenizer(
             tokenized_code,

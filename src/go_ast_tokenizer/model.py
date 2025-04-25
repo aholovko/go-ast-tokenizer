@@ -37,6 +37,9 @@ class Llama3Classifier(L.LightningModule):
         )
         self.model.resize_token_embeddings(len(tokenizer))
 
+        # memory optimization: discards most forward activations and recomputes them on the backward pass
+        self.model.gradient_checkpointing_enable()
+
         # freeze all parameters except the classification head
         for name, param in self.model.named_parameters():
             param.requires_grad = name.startswith("score")
@@ -62,7 +65,9 @@ class Llama3Classifier(L.LightningModule):
         )
 
     def forward(self, input_ids: torch.LongTensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        return self.model(input_ids=input_ids, attention_mask=attention_mask).logits
+        # memory optimization: disable KV-cache so we don't store huge key/value tensors
+        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False, return_dict=True)
+        return outputs.logits
 
     def training_step(self, batch, batch_idx):
         return self._step(batch, "train")
