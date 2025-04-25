@@ -18,6 +18,6 @@ trainer:
   callbacks:
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
-        monitor: val/loss
-        mode: min
+        monitor: val/f1
+        mode: max
         save_top_k: 1
