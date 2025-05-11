@@ -8,7 +8,7 @@ from datasets import DatasetDict, load_dataset
 from torch.utils.data import DataLoader, Dataset
 from transformers import BatchEncoding, DataCollatorWithPadding, LlamaTokenizer  # type: ignore
 
-from src.go_ast_tokenizer.tokenizer import GoASTTokenizer
+from src.go_ast_tokenizer.tokenizer import SPECIAL_TOKENS, GoASTTokenizer
 from src.go_ast_tokenizer.utils import get_tokenizer
 
 TOKENIZER_MODEL_ID = "meta-llama/Llama-3.2-1B"
@@ -30,6 +30,7 @@ class GoCriticStyleDataset(Dataset):
 
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
+        self.tokenizer.add_special_tokens({"additional_special_tokens": SPECIAL_TOKENS})  # type: ignore
         self.max_length = max_length
 
         label_feature = hf_dataset.features["labels"].feature
