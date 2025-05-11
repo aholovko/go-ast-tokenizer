@@ -1,0 +1,9 @@
+,assignOp,builtinShadow,captLocal,commentFormatting,elseif,ifElseChain,paramTypeCombine,singleCaseSwitch
+assignOp,300,8,8,12,6,15,16,1
+builtinShadow,8,300,3,4,1,6,10,2
+captLocal,8,3,300,7,0,8,12,3
+commentFormatting,12,4,7,300,3,13,40,4
+elseif,6,1,0,3,300,5,3,2
+ifElseChain,15,6,8,13,5,300,22,6
+paramTypeCombine,16,10,12,40,3,22,300,2
+singleCaseSwitch,1,2,3,4,2,6,2,300
